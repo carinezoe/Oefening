@@ -60,7 +60,7 @@ foreach ($_FILES["fileToUpload"]["tmp_name"] as $index => $tmpName) {
             $clientName = (string)$clientParty->PartyName->children($namespaces['cbc'])->Name;
             $clientVAT = (string)$clientParty->PartyTaxScheme->children($namespaces['cbc'])->CompanyID;
 
-            // Store for CSV
+            // Store for CSV and PDF
             $invoiceData[] = [
                 'InvoiceNumber' => (string)$cbc->ID,
                 'InvoiceDate' => $invoiceDate,
@@ -77,6 +77,7 @@ foreach ($_FILES["fileToUpload"]["tmp_name"] as $index => $tmpName) {
     }
 }
 
+// CSV download
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['download_csv']) && isset($_SESSION['invoiceData'])) {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment;filename=invoices.csv');
@@ -99,6 +100,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['download_csv']) && is
     exit;
 }
 
+// PDF download
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['download_pdf']) && isset($_SESSION['invoiceData'])) {
+    require_once 'vendor/autoload.php';  // Ensure Composer's autoloader is used
+
+    $pdf = new FPDF('L'); // 'L' for landscape orientation
+    $pdf->AddPage();
+
+    // Title
+    $pdf->SetFont('Arial', 'B', 16);
+    $pdf->Cell(270, 10, 'Invoice Report', 0, 1, 'C');
+
+    // Table Header
+    $pdf->SetFont('Arial', 'B', 12);
+    $pdf->Cell(40, 10, 'InvoiceNumber', 1, 0, 'C');
+    $pdf->Cell(40, 10, 'InvoiceDate', 1, 0, 'C');
+    $pdf->Cell(50, 10, 'ExclBTW', 1, 0, 'C');
+    $pdf->Cell(50, 10, 'BTW', 1, 0, 'C');
+    $pdf->Cell(60, 10, 'ClientName', 1, 0, 'C');
+    $pdf->Cell(60, 10, 'ClientVAT', 1, 1, 'C');
+
+    // Data Rows
+    $pdf->SetFont('Arial', '', 12);
+    foreach ($_SESSION['invoiceData'] as $row) {
+        $pdf->Cell(40, 10, $row['InvoiceNumber'], 1, 0, 'C');
+        $pdf->Cell(40, 10, $row['InvoiceDate'], 1, 0, 'C');
+        $pdf->Cell(50, 10, number_format($row['ExclBTW'], 2, ',', '.'), 1, 0, 'C');
+        $pdf->Cell(50, 10, number_format($row['BTW'], 2, ',', '.'), 1, 0, 'C');
+        $pdf->Cell(60, 10, $row['ClientName'], 1, 0, 'C');
+        $pdf->Cell(60, 10, $row['ClientVAT'], 1, 1, 'C');
+    }
+
+    // Output the PDF
+    $pdf->Output('D', 'invoices.pdf');
+    exit;
+}
+
 // Take sum of all invoice amounts
 $totalAmount = array_sum($amounts);
 $totalTaxAmount = array_sum($taxAmounts);
@@ -116,11 +153,12 @@ echo "Total Tax: €" . number_format($totalTaxAmount, 2, ',', '.') . "<br>";
 echo "<br><b>Total Amount with tax for All Invoices:</b><br>";
 echo "Total Amount: €" . number_format($totalIncludingTax, 2, ',', '.') . "<br><br>";
 
-// Show download CSV button
+// Show download CSV and PDF buttons
 $_SESSION['invoiceData'] = $invoiceData;
 
 echo '<form method="post">';
-echo '<button type="submit" name="download_csv">Download CSV</button>';
+echo '<button type="submit" name="download_csv">Download CSV</button><br><br>';
+echo '<button type="submit" name="download_pdf">Download PDF</button>';
 echo '</form>';
 
 ?>
