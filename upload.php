@@ -1,5 +1,9 @@
 <?php
+session_start();
+$invoiceData = [];
 
+error_reporting(0);
+ini_set('display_errors', 0);
 $target_dir = "uploads/";
 
 $taxAmounts = [];
@@ -47,6 +51,24 @@ foreach ($_FILES["fileToUpload"]["tmp_name"] as $index => $tmpName) {
 
             $taxAmountValue = (float)$taxAmount;
             $taxAmounts[] = $taxAmountValue;
+
+            // Extract invoice date
+            $invoiceDate = (string)$cbc->IssueDate;
+
+            // Client name and VAT
+            $clientParty = $cac->AccountingCustomerParty->children($namespaces['cac'])->Party;
+            $clientName = (string)$clientParty->PartyName->children($namespaces['cbc'])->Name;
+            $clientVAT = (string)$clientParty->PartyTaxScheme->children($namespaces['cbc'])->CompanyID;
+
+            // Store for CSV
+            $invoiceData[] = [
+                'InvoiceNumber' => (string)$cbc->ID,
+                'InvoiceDate' => $invoiceDate,
+                'ExclBTW' => $amountValue,
+                'BTW' => $taxAmountValue,
+                'ClientName' => $clientName,
+                'ClientVAT' => $clientVAT
+            ];
         } else {
             echo "Error uploading '$fileName'.<br>";
         }
@@ -55,17 +77,50 @@ foreach ($_FILES["fileToUpload"]["tmp_name"] as $index => $tmpName) {
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['download_csv']) && isset($_SESSION['invoiceData'])) {
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment;filename=invoices.csv');
+
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['InvoiceNumber', 'InvoiceDate', 'ExclBTW', 'BTW', 'ClientName', 'ClientVAT']);
+
+    foreach ($_SESSION['invoiceData'] as $row) {
+        fputcsv($output, [
+            $row['InvoiceNumber'],
+            $row['InvoiceDate'],
+            number_format($row['ExclBTW'], 2, '.', ''),
+            number_format($row['BTW'], 2, '.', ''),
+            $row['ClientName'],
+            $row['ClientVAT']
+        ]);
+    }
+
+    fclose($output);
+    exit;
+}
+
+// Take sum of all invoice amounts
 $totalAmount = array_sum($amounts);
 $totalTaxAmount = array_sum($taxAmounts);
 $totalIncludingTax = $totalAmount + $totalTaxAmount;
 
+// Show total (without tax)
 echo "<br><b>Total Amount without tax for All Invoices:</b><br>";
 echo "Total Amount: €" . number_format($totalAmount, 2, ',', '.') . "<br>";
 
+// Show tax total
 echo "<br><b>Total Tax Amount for All Invoices:</b><br>";
 echo "Total Tax: €" . number_format($totalTaxAmount, 2, ',', '.') . "<br>";
 
+// Show total (with tax)
 echo "<br><b>Total Amount with tax for All Invoices:</b><br>";
-echo "Total Amount: €" . number_format($totalIncludingTax, 2, ',', '.') . "<br>";
+echo "Total Amount: €" . number_format($totalIncludingTax, 2, ',', '.') . "<br><br>";
+
+// Show download CSV button
+$_SESSION['invoiceData'] = $invoiceData;
+
+echo '<form method="post">';
+echo '<button type="submit" name="download_csv">Download CSV</button>';
+echo '</form>';
 
 ?>
